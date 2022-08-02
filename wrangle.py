@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns 
 sns.set()
 
+# sklearn library for data science
+from sklearn.model_selection import train_test_split
+
 # importing mysql
 import env
 from env import user, password, host, get_connection
@@ -87,6 +90,12 @@ def null_df(df):
     # setting the df index to "name"
     new_df = new_df.set_index("Name")
 
+    # setting index name to None
+    new_df = new_df.rename_axis(None, axis = 0)
+
+    # sorting df by percentage of null descending
+    new_df = new_df.sort_values("Total Null", ascending = False)
+
     # returning the new null dataframe
     return new_df
 
@@ -110,7 +119,21 @@ def drop_nulls(df, required_column_percentage, required_record_percentage):
     
     return df
 
+'''Function created to split the initial dataset into train, validate, and test datsets'''
+def train_validate_test_split(df):
+    train_and_validate, test = train_test_split(
+    df, test_size = 0.2, random_state = 123)
+    
+    train, validate = train_test_split(
+        train_and_validate,
+        test_size = 0.3,
+        random_state = 123)
 
+    print(f'train shape: {train.shape}')
+    print(f'validate shape: {validate.shape}')
+    print(f'test shape: {test.shape}')
+
+    return train, validate, test
 
 
 '''-----------------------------------'''
