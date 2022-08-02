@@ -27,12 +27,36 @@ def get_zillow_dataset():
     else:
         # query used to pull the 2017 properties table from MySQL
         query = ''' 
-                SELECT *
-                FROM properties_2017
-                        RIGHT JOIN (SELECT parcelid, any_value(logerror), MAX(transactiondate) AS maxtransaction_date 
-                            FROM predictions_2017
-                                GROUP BY (predictions_2017.parcelid)) AS table2 USING (parcelid)
-                                    WHERE maxtransaction_date < 2018'''
+        SELECT prop.*,
+        predictions_2017.logerror,
+        predictions_2017.transactiondate,
+        air.airconditioningdesc,
+        arch.architecturalstyledesc,
+        build.buildingclassdesc,
+        heat.heatingorsystemdesc,
+        land.propertylandusedesc,
+        story.storydesc,
+        type.typeconstructiondesc
+        FROM properties_2017 prop
+        JOIN (
+            SELECT parcelid, MAX(transactiondate) AS max_transactiondate
+            FROM predictions_2017
+            GROUP BY parcelid
+            ) pred USING(parcelid)
+        JOIN predictions_2017 ON pred.parcelid = predictions_2017.parcelid
+                          AND pred.max_transactiondate = predictions_2017.transactiondate
+        LEFT JOIN airconditioningtype air USING(airconditioningtypeid)
+        LEFT JOIN architecturalstyletype arch USING(architecturalstyletypeid)
+        LEFT JOIN buildingclasstype build USING(buildingclasstypeid)
+        LEFT JOIN heatingorsystemtype heat USING(heatingorsystemtypeid)
+        LEFT JOIN propertylandusetype land USING(propertylandusetypeid)
+        LEFT JOIN storytype story USING(storytypeid)
+        LEFT JOIN typeconstructiontype type USING(typeconstructiontypeid)
+        WHERE propertylandusedesc = "Single Family Residential"
+            AND transactiondate <= '2017-12-31'
+            AND prop.longitude IS NOT NULL
+            AND prop.latitude IS NOT NULL
+        '''
         
         db_url = f'mysql+pymysql://{user}:{password}@{host}/zillow'
 
@@ -43,6 +67,54 @@ def get_zillow_dataset():
         return df
 
 
+'''Function takes in a dataframe and returns a feature/column total null count and percentage df'''
+def null_df(df):
+    # creating a container to hold all features and needed null data
+    container = []
+
+    for col in list(df.columns):
+        feature_info = {
+            "Name": col, \
+            "Total Null": df[col].isnull().sum(), \
+            "Feature Null %": df[col].isnull().sum() / df.shape[0]
+        }
+        # appending feature and data to container list
+        container.append(feature_info)
+        
+    # creating the new dataframe
+    new_df = pd.DataFrame(container)
+
+    # setting the df index to "name"
+    new_df = new_df.set_index("Name")
+
+    # returning the new null dataframe
+    return new_df
+
+
+# function to drop columns/rows based on proportion of nulls across record and feature
+def drop_nulls(df, required_column_percentage, required_record_percentage):
+    
+    feature_null_percentage = 1 - required_column_percentage
+    
+    for col in list(df.columns):
+        
+        null_sum = df[col].isna().sum()
+        null_pct = null_sum / df.shape[0]
+        
+        if null_pct > feature_null_percentage:
+            df.drop(columns=col, inplace=True)
+            
+    feature_threshold = int(required_record_percentage * df.shape[1])
+    
+    df = df.dropna(axis = 0, thresh = feature_threshold)
+    
+    return df
+
+
+
+
+'''-----------------------------------'''
+# borrowed/previous lesson functions
 
 def remove_columns(df, cols_to_remove):
     df = df.drop(columns=cols_to_remove)
