@@ -10,6 +10,8 @@ sns.set()
 
 # sklearn library for data science
 from sklearn.model_selection import train_test_split
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
 
 # import datetime module
 import datetime
@@ -72,6 +74,7 @@ def get_zillow_dataset():
 
         return df
 
+
 '''Preparing/cleaning zillow dataset
 focus is dropping Null values and changing column types'''
 def clean_zillow_dataset(df):
@@ -103,7 +106,6 @@ def clean_zillow_dataset(df):
     'logerror',
     'longitude',
     'lotsizesquarefeet',
-    'parcelid',
     'propertycountylandusecode',
     'rawcensustractandblock',
     'structuretaxvaluedollarcnt',
@@ -121,7 +123,6 @@ def clean_zillow_dataset(df):
     'fips': "county_by_fips",
     'landtaxvaluedollarcnt': "land_assessed_value",
     'lotsizesquarefeet': "property_sq_feet",
-    'parcelid': "property_id",
     'propertycountylandusecode': "county_zoning_code",
     'rawcensustractandblock': "blockgroup_assignment",
     'structuretaxvaluedollarcnt': "home_assessed_value",
@@ -135,13 +136,14 @@ def clean_zillow_dataset(df):
         ["LA County", "Orange County", "Ventura County"])
 
     # converting the following cols to proper int type
-    # int_cols = ["bedroom_count", "year_built"]
-    # df[int_cols] = df[int_cols].astype(int)
+    # df["year_built"] = df["year_built"].astype(int)
 
     # converting purchase date to datetime type
     df['transaction_date'] = pd.to_datetime(df['transaction_date'], format = '%Y/%m/%d')
 
-    # lastly, return the cleaned dataset
+    # returning the cleaned dataset
+    print(f'dataframe shape: {df.shape}')
+
     return df
 
 
@@ -159,7 +161,24 @@ def clean_months(df):
         year_and_month,
         month_lst)
 
+    # dropping transaction date column/feature and keeping solely purchase month information
+    df.drop(columns = "transaction_date", inplace = True)
+
     return df 
+
+
+'''Function to calculate total age of the home through present year 
+based on the year it was built'''
+def age_of_homes(df):
+    # creating a column for age of the home
+    year_built = df["year_built"]
+    curr_year = datetime.datetime.now().year
+
+    # placing column/series back into main df
+    df["home_age"] = (curr_year - year_built)
+
+    return df
+
 
 
 '''Function takes in a dataframe and returns a feature/column total null count and percentage df'''
@@ -192,7 +211,7 @@ def null_df(df):
     return new_df
 
 
-# function to drop columns/rows based on proportion of nulls across record and feature
+'''function to drop columns/rows based on proportion of nulls across record and feature'''
 def drop_nulls(df, required_column_percentage, required_record_percentage):
     
     feature_null_percentage = 1 - required_column_percentage
@@ -211,6 +230,7 @@ def drop_nulls(df, required_column_percentage, required_record_percentage):
     
     return df
 
+
 '''Function created to split the initial dataset into train, validate, and test datsets'''
 def train_validate_test_split(df):
     train_and_validate, test = train_test_split(
@@ -227,6 +247,132 @@ def train_validate_test_split(df):
 
     return train, validate, test
 
+
+'''Functions determines outliers based on iqr upper-bound, and returns a dataframe with
+feature name, upper-bound, and total number of outliers above upper-bound'''
+def sum_outliers(df, k = 1.5):
+    
+    # placeholder for df values
+    uppercap_df = []
+
+    for col in df.select_dtypes("number"):
+        # removing the target variable
+        if col != "logerror":
+            # determing 1st and 3rd quartile
+            q1, q3 = df[col].quantile([.25, 0.75])
+
+            # calculate interquartile range
+            iqr = q3 - q1
+
+            # set feature/data upperbound limit
+            upper_bound = q3 + k * iqr
+
+            # boolean mask to determine total number of outliers
+            mask = df[df[col] > upper_bound]
+
+            if mask.shape[0] > 0:
+
+                output = {
+                    "Feature": col, \
+                    "Upper_Bound": upper_bound, \
+                    "Total Outliers": mask.shape[0]
+                    }
+
+                uppercap_df.append(output)
+    
+    new_df = pd.DataFrame(uppercap_df).sort_values(by = "Total Outliers", ascending = False, ).reset_index(drop = True)
+    
+    return new_df
+
+
+'''Function determines outliers based on "iqr" and then capps outliers at upper-bound'''
+def capp_outliers(df, num_lst, k = 1.5):
+    
+    # determining continuous features/columns
+    for col in df[num_lst]:
+        
+        # determing 1st and 3rd quartile
+        q1, q3 = df[col].quantile([.25, 0.75])
+        
+        # calculate interquartile range
+        iqr = q3 - q1
+        
+        # set feature/data upperbound limit
+        upper_bound = q3 + k * iqr
+        
+        # cap/convert outliers to upperbound
+        df[col] = df[col].apply(lambda x: upper_bound if x > upper_bound else x)
+    
+        # renaming the column to reflect capping
+        df.rename(columns = {col: col + "-capped"}, inplace = True)
+
+    # returning the updated dataframe
+    return df
+
+
+'''Function handles outliers using sklearn's Iterative Imputer and returns a new dataframe'''
+def iterative_imputer_outliers(df_train, df_validate, df_test):
+
+    # normalizing null values text
+    df_train = df_train.replace('?', np.NaN)
+    df_validate = df_validate.replace('?', np.NaN)
+    df_test = df_test.replace('?', np.NaN)
+    
+    # classifying features/varibles by data type (discrete/continuous)
+    num_lst = []
+
+    for col in df_train.select_dtypes("number"):
+            num_lst.append(col)
+            
+    # using sklearn's iterative imputer to determine/fill-in remaining missing values
+    numeric_cols = df_train[num_lst]
+
+    # creating the "thing"
+    impute_it = IterativeImputer(
+        missing_values = nan, \
+        skip_complete = True, \
+        random_state = 123)
+    
+    # fitting the "thing"/imputer to train dataset only!
+
+    train_imputed = impute_it.fit_transform(numeric_cols)
+    missing_train = pd.DataFrame(train_imputed, index = df_train.index)
+    df_train[num_lst] = missing_train
+
+    # returning val, and test datasets transformed
+
+    validate_imputed = impute_it.transform(df_validate[num_lst])
+    missing_validate = pd.DataFrame(validate_imputed, index = df_validate.index)
+    df_validate[num_lst] = missing_validate
+
+    test_imputed = impute_it.transform(df_test[num_lst])
+    missing_test = pd.DataFrame(test_imputed, index = df_test.index)
+    df_test[num_lst] = missing_test
+
+    # returning all 3 datasets
+    return train_imputed, validate_imputed, test_imputed
+
+
+'''-----------------------------------'''
+# borrowed/previous lesson functions
+
+def remove_columns(df, cols_to_remove):
+    df = df.drop(columns=cols_to_remove)
+    return df
+
+def handle_missing_values(df, prop_required_columns=0.5, prop_required_row=0.75):
+    threshold = int(round(prop_required_columns * len(df.index), 0))
+    df = df.dropna(axis=1, thresh=threshold) #1, or ‘columns’ : Drop columns which contain missing value
+    threshold = int(round(prop_required_row * len(df.columns), 0))
+    df = df.dropna(axis=0, thresh=threshold) #0, or ‘index’ : Drop rows which contain missing values.
+    return df
+
+
+# combining both functions above in a cleaning function:
+def data_prep(df, cols_to_remove=[], prop_required_column=0.5, prop_required_row=0.75):
+    df = remove_columns(df, cols_to_remove)
+    df = handle_missing_values(df, prop_required_column, prop_required_row)
+    return df
 
 '''
 Given a series and a cutoff value, k, returns the upper outliers for the
@@ -250,7 +396,6 @@ def get_upper_outliers(s, k=1.5):
     
     return df
 
-
 '''Add a column with the suffix _outliers for all the numeric columns
 in the given dataframe'''
 def add_upper_outlier_columns(df, k=1.5):
@@ -261,38 +406,4 @@ def add_upper_outlier_columns(df, k=1.5):
     
     df = df.reset_index(drop = True)
 
-    return df
-
-'''Function to calculate total age of the home through present year 
-based on the year it was built'''
-def age_of_homes(df):
-    # creating a column for age of the home
-    year_built = df["year_built"]
-    curr_year = datetime.datetime.now().year
-
-    # placing column/series back into main df
-    df["home_age"] = (curr_year - year_built)
-
-    return df
-
-'''-----------------------------------'''
-# borrowed/previous lesson functions
-
-def remove_columns(df, cols_to_remove):
-    df = df.drop(columns=cols_to_remove)
-    return df
-
-
-def handle_missing_values(df, prop_required_columns=0.5, prop_required_row=0.75):
-    threshold = int(round(prop_required_columns * len(df.index), 0))
-    df = df.dropna(axis=1, thresh=threshold) #1, or ‘columns’ : Drop columns which contain missing value
-    threshold = int(round(prop_required_row * len(df.columns), 0))
-    df = df.dropna(axis=0, thresh=threshold) #0, or ‘index’ : Drop rows which contain missing values.
-    return df
-
-
-# combining both functions above in a cleaning function:
-def data_prep(df, cols_to_remove=[], prop_required_column=0.5, prop_required_row=0.75):
-    df = remove_columns(df, cols_to_remove)
-    df = handle_missing_values(df, prop_required_column, prop_required_row)
     return df
