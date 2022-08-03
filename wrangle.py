@@ -11,6 +11,9 @@ sns.set()
 # sklearn library for data science
 from sklearn.model_selection import train_test_split
 
+# import datetime module
+import datetime
+
 # importing mysql
 import env
 from env import user, password, host, get_connection
@@ -68,6 +71,75 @@ def get_zillow_dataset():
         df.to_csv(filename)
 
         return df
+
+'''Preparing/cleaning zillow dataset
+focus is dropping Null values and changing column types'''
+def clean_zillow_dataset(df):
+
+    # handling initial feature nulls
+    max_null_percentage = 0.20
+    min_record_percentage = 0.8
+
+    for col in list(df.columns):
+    
+        null_sum = df[col].isna().sum()
+        null_pct = null_sum / df.shape[0]
+        
+        if null_pct > max_null_percentage:
+            df.drop(columns=col, inplace=True)
+    
+    feature_threshold = int(min_record_percentage * df.shape[1])
+    
+    df = df.dropna(axis = 0, thresh = feature_threshold)
+
+    # cols needed for initial exploration & hypothesis testing
+    df = df[[
+    'bathroomcnt',
+    'bedroomcnt',
+    'calculatedfinishedsquarefeet',
+    'fips',
+    'landtaxvaluedollarcnt',
+    'latitude',
+    'logerror',
+    'longitude',
+    'lotsizesquarefeet',
+    'parcelid',
+    'propertycountylandusecode',
+    'rawcensustractandblock',
+    'structuretaxvaluedollarcnt',
+    'taxamount',
+    'taxvaluedollarcnt',
+    'transactiondate',
+    'yearbuilt'
+    ]]
+
+    # renaming cols
+    df = df.rename(columns = {
+    
+    'bathroomcnt': "bathroom_count",
+    'bedroomcnt': "bedroom_count",
+    'calculatedfinishedsquarefeet': "living_sq_feet",
+    'fips': "fips_code",
+    'landtaxvaluedollarcnt': "land_assessed_value",
+    'lotsizesquarefeet': "property_sq_feet",
+    'parcelid': "property_id",
+    'propertycountylandusecode': "county_zoning_code",
+    'rawcensustractandblock': "blockgroup_assignment",
+    'structuretaxvaluedollarcnt': "home_assessed_value",
+    'taxvaluedollarcnt': "home_value",
+    'transactiondate': "transaction_date",
+    'yearbuilt': "year_built",})
+
+    # converting the following cols to proper int type
+    # int_cols = ["bedroom_count", "year_built"]
+    # df[int_cols] = df[int_cols].astype(int)
+
+    # converting purchase date to datetime type
+    df['transaction_date'] = pd.to_datetime(df['transaction_date'])
+
+    # lastly, return the cleaned dataset
+    return df
+
 
 
 '''Function takes in a dataframe and returns a feature/column total null count and percentage df'''
@@ -135,6 +207,53 @@ def train_validate_test_split(df):
 
     return train, validate, test
 
+
+'''
+Given a series and a cutoff value, k, returns the upper outliers for the
+series.
+
+The values returned will be either 0 (if the point is not an outlier), or a
+number that indicates how far away from the upper bound the observation is.
+'''
+def get_upper_outliers(s, k=1.5):
+
+    q1, q3 = s.quantile([.25, 0.75])
+
+    # generating interquantile range
+    iqr = q3 - q1
+
+    # creating the feature upperbound
+    upper_bound = q3 + (k * iqr)
+
+    # creating a dataframe of feature upperbound
+    df = pd.DataFrame(s.apply(lambda x: max([x - upper_bound, 0])))
+    
+    return df
+
+
+'''Add a column with the suffix _outliers for all the numeric columns
+in the given dataframe'''
+def add_upper_outlier_columns(df, k=1.5):
+    
+    # iterate through all dataframe columns and check for numerical type columns
+    for col in df.select_dtypes('number'):
+        df[col + '_outliers_upper'] = get_upper_outliers(df[col], k)
+    
+    df = df.reset_index(drop = True)
+
+    return df
+
+'''Function to calculate total age of the home through present year 
+based on the year it was built'''
+def age_of_homes(df):
+    # creating a column for age of the home
+    year_built = df["year_built"]
+    curr_year = datetime.datetime.now().year
+
+    # placing column/series back into main df
+    df["home_age"] = (curr_year - year_built)
+
+    return df
 
 '''-----------------------------------'''
 # borrowed/previous lesson functions
