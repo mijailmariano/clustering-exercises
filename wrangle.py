@@ -115,11 +115,10 @@ def clean_zillow_dataset(df):
 
     # renaming cols
     df = df.rename(columns = {
-    
     'bathroomcnt': "bathroom_count",
     'bedroomcnt': "bedroom_count",
     'calculatedfinishedsquarefeet': "living_sq_feet",
-    'fips': "fips_code",
+    'fips': "county_by_fips",
     'landtaxvaluedollarcnt': "land_assessed_value",
     'lotsizesquarefeet': "property_sq_feet",
     'parcelid': "property_id",
@@ -130,16 +129,37 @@ def clean_zillow_dataset(df):
     'transactiondate': "transaction_date",
     'yearbuilt': "year_built",})
 
+    # converting fips_code to county
+    df["county_by_fips"] = df["county_by_fips"].replace(
+        [6037.0, 6059.0, 6111.0], \
+        ["LA County", "Orange County", "Ventura County"])
+
     # converting the following cols to proper int type
     # int_cols = ["bedroom_count", "year_built"]
     # df[int_cols] = df[int_cols].astype(int)
 
     # converting purchase date to datetime type
-    df['transaction_date'] = pd.to_datetime(df['transaction_date'])
+    df['transaction_date'] = pd.to_datetime(df['transaction_date'], format = '%Y/%m/%d')
 
     # lastly, return the cleaned dataset
     return df
 
+
+'''Function takes in the original zillow dataset and returns a new column/feature
+called "transaction_month" which is the month when the home was sold/purchased'''
+def clean_months(df):
+    # mapping existing date to just year and month of transaction
+    df['transaction_month'] = df['transaction_date'].map(lambda dt: dt.strftime('%Y-%m'))
+
+    # renaming month-year column to months only
+    year_and_month = df["transaction_month"].sort_values().unique().tolist()
+    month_lst = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September']
+
+    df["transaction_month"] = df["transaction_date"].replace(
+        year_and_month,
+        month_lst)
+
+    return df 
 
 
 '''Function takes in a dataframe and returns a feature/column total null count and percentage df'''
