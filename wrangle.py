@@ -95,6 +95,9 @@ def clean_zillow_dataset(df):
     
     df = df.dropna(axis = 0, thresh = feature_threshold)
 
+    # cleaning df for records with < 50ft. of living space 
+    df = df[df["calculatedfinishedsquarefeet"] >= 50]
+
     # cols needed for initial exploration & hypothesis testing
     df = df[[
     'bathroomcnt',
@@ -151,13 +154,13 @@ def clean_zillow_dataset(df):
 called "transaction_month" which is the month when the home was sold/purchased'''
 def clean_months(df):
     # mapping existing date to just year and month of transaction
-    df['transaction_month'] = df['transaction_date'].map(lambda dt: dt.strftime('%Y-%m'))
+    df['transaction_month'] = pd.to_datetime(df.transaction_date).dt.strftime('%m/%Y')
 
     # renaming month-year column to months only
     year_and_month = df["transaction_month"].sort_values().unique().tolist()
     month_lst = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September']
 
-    df["transaction_month"] = df["transaction_date"].replace(
+    df["transaction_month"] = df["transaction_month"].replace(
         year_and_month,
         month_lst)
 
@@ -172,10 +175,10 @@ based on the year it was built'''
 def age_of_homes(df):
     # creating a column for age of the home
     year_built = df["year_built"]
-    curr_year = datetime.datetime.now().year
+    # curr_year = datetime.datetime.now().year
 
     # placing column/series back into main df
-    df["home_age"] = (curr_year - year_built)
+    df["home_age"] = 2017 - year_built
 
     return df
 
@@ -310,47 +313,6 @@ def capp_outliers(df, num_lst, k = 1.5):
     return df
 
 
-'''Function handles outliers using sklearn's Iterative Imputer and returns a new dataframe'''
-def iterative_imputer_outliers(df_train, df_validate, df_test):
-
-    # normalizing null values text
-    df_train = df_train.replace('?', np.NaN)
-    df_validate = df_validate.replace('?', np.NaN)
-    df_test = df_test.replace('?', np.NaN)
-    
-    # classifying features/varibles by data type (discrete/continuous)
-    num_lst = []
-
-    for col in df_train.select_dtypes("number"):
-            num_lst.append(col)
-            
-    # using sklearn's iterative imputer to determine/fill-in remaining missing values
-    numeric_cols = df_train[num_lst]
-
-    # creating the "thing"
-    impute_it = IterativeImputer(
-        missing_values = nan, \
-        skip_complete = True, \
-        random_state = 123)
-    
-    # fitting the "thing"/imputer to train dataset only!
-
-    train_imputed = impute_it.fit_transform(numeric_cols)
-    missing_train = pd.DataFrame(train_imputed, index = df_train.index)
-    df_train[num_lst] = missing_train
-
-    # returning val, and test datasets transformed
-
-    validate_imputed = impute_it.transform(df_validate[num_lst])
-    missing_validate = pd.DataFrame(validate_imputed, index = df_validate.index)
-    df_validate[num_lst] = missing_validate
-
-    test_imputed = impute_it.transform(df_test[num_lst])
-    missing_test = pd.DataFrame(test_imputed, index = df_test.index)
-    df_test[num_lst] = missing_test
-
-    # returning all 3 datasets
-    return train_imputed, validate_imputed, test_imputed
 
 
 '''-----------------------------------'''
